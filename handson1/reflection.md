@@ -153,13 +153,13 @@ ___
 ## Bonus
 
 ### Bonus 1 — Artist Audio Fingerprint
-- Artist pair yang dibandingkan: `___` vs `___`, `___` vs `___`, `___` vs `___`
-- **Temuan:** ___
+- Artist pair yang dibandingkan: `Queen` vs `Guns N' Roses`, `Ariana Grande` vs `Billie Eilish`, `David Guetta` vs `The Chainsmokers`
+- **Temuan:** Pair dengan genre yang lebih dekat memiliki cosine similarity lebih tinggi. `Queen` vs `Guns N' Roses` (rock vs rock) adalah contoh same-genre yang paling mirip.
 
 ### Bonus 2 — Genre Cluster Profile
-- Genre paling mirip: `___` & `___`
-- Genre paling berbeda: `___` & `___`
-- **Apakah sesuai intuisi musikal?** ___
+- Genre paling mirip: `pop` & `rap`
+- Genre paling berbeda: `edm` & `r&b`
+- **Apakah sesuai intuisi musikal?** Ya. `pop` dan `rap` sering berdekatan dalam tempo dan energi modern, sementara `edm` dan `r&b` memiliki karakter audio yang lebih berbeda.
 
 ### Bonus 3 — SpotifyAnalyzer Class
 - [ ] `__init__`, load DataFrame dari URL
@@ -174,8 +174,8 @@ ___
 
 > *Ditulis ulang dari markdown cell di notebook, versi yang bisa dipahami orang awam.*
 
-1. **___**
+1. **Pop memuat lagu-lagu yang sangat beragam dalam hal popularitas.** Ini berarti sistem rekomendasi harus melihat lagu per lagu, bukan hanya mengandalkan label genre.
 
-2. **___**
+2. **Jumlah lagu yang banyak tidak selalu berarti lebih populer.** Artis dengan katalog besar tidak otomatis memiliki skor popularitas rata-rata yang lebih tinggi.
 
-3. **___**
+3. **Lagu dengan energi sangat tinggi cenderung kurang populer secara rata-rata.** Musik yang sangat intens mungkin cocok untuk penggemar khusus, tetapi tidak selalu menjadi favorit pendengar umum.
