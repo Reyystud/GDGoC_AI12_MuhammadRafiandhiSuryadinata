@@ -1,0 +1,136 @@
+GDGOC AI QUIZ
+
+An Indonesian EdTech startup is building an AI-powered course recommendation system. They have a dataset containing students' course-viewing history, ratings given, and demographic profiles (age, major, university). They plan to train an ML model to predict which courses a new user will rate highly. 
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+1. Identify at least three potential sources of bias that may arise in this system, and explain where each bias originates (from data, feature design, or the evaluation process). Provide a concrete example of how each bias would harm real users.
+
+1. Potential Sources of Bias
+Bias 1 Popularity Bias (from Data)
+The training data reflects historical interactions, which are skewed toward popular courses. Courses with thousands of ratings dominate the signal, it's niche but high quality courses have sparse data. For example, a student majoring in Computational Biology asks for recommendations. The system keeps pushing generic Python for Data Science courses because they have the most ratings, while a specialized Bioinformatics course with only 30 ratings never surfaces even though it's exactly what that student needs.
+
+Bias 2 Demographic Proxy Bias (from Feature Design)
+Including "major" and "university" as features introduces proxy discrimination. The model learns that "students from University X, major Y tend to rate course Z highly" but this conflates socio-economic access, curriculum differences, and actual interest. For example, a student from a lesser known regional university gets systematically recommended introductory level courses because historically those students rated advanced courses lower not because they're less capable, but because they had weaker prerequisite preparation. The system encodes inequality rather than correcting for it.
+
+Bias 3 Evaluation Metric Bias (from the Evaluation Process)
+If the team evaluates using aggregate metrics like overall RMSE or accuracy, good average performance can mask terrible performance on minority subgroups (non Java island students, non CS majors, older learners). The model achieves 92% accuracy on the test set, ships to production, and the team celebrates. But for students aged 35+ returning to education, a small slice of the dataset, the recommendation quality is essentially random, causing them to drop off the platform entirely. This never shows up in the headline metrics.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+2. The startup plans to add an LLM layer (e.g. Gemini) to generate natural language explanations of why a course was recommended. Describe the specific hallucination risks this introduces, and explain technically how the engineering team should mitigate them.
+2. LLM Hallucination Risks and Mitigations
+Risk 1 Fabricated course attributes
+The LLM is asked to explain why a course was recommended. Without grounding, it may invent details "This course is taught by Prof. Budi Santoso from UI and covers advanced transformer architectures" when in reality the instructor is different, or the syllabus doesnt match.
+
+Risk 2 Confabulated causality 
+The recommendation engine is a black-box CF model. The LLM has no access to the actual reasoning (latent factors, embedding similarity). It will generate plausible sounding but structurally false causal explanations "We recommend this because you completed Module 3 of Course X", when the actual signal was embedding proximity to a cluster of users the student never knew about.
+
+Risk 3 Stale knowledge
+If the LLM's training cutoff predates the course catalog, it may describe course content that has since changed, deprecated tools (explaining a TensorFlow 1.x course as if it teaches PyTorch), or reference instructors who no longer teach the course.
+
+Mitigations (Engineering Level)
+
+1. Retrieval Augmented Generation (RAG)
+Never let the LLM generate from parametric memory alone. Before calling the LLM, retrieve the actual course metadata from your database and inject it into the prompt as grounded context:
+# Pseudocode
+course_context = db.get_course_metadata(course_id)  
+# → {title, instructor, syllabus_summary, duration, last_updated}
+
+prompt = f"""
+You are explaining a course recommendation. Use ONLY the following 
+verified data. Do not add any information not present here.
+
+Course data: {course_context}
+User's viewing history summary: {user_history_summary}
+
+Explain in 2 sentences why this course suits this user.
+"""
+
+2. Constrained Output with Templating
+For high risk fields (instructor name, certification details, prerequisites), dont let the LLM generate them freely, but interpolate them directly from the database into a template, and only use the LLM for the "soft" connective explanation:
+
+explanation = (
+    f"Karena kamu menyelesaikan **{last_course}**, "
+    f"kursus ini ({course['title']}) melanjutkan ke "
+    f"{llm_generated_bridge_sentence}"  # LLM only fills this gap
+    f"Instruktur: {course['instructor']} · {course['duration']} jam"
+)
+
+3. Confidence Gated Output
+If the recommendation model confidence score is below a threshold, suppress the LLM explanation entirely and fall back to a template-only response. Dont let the LLM paper over low confidence recommendations with fluent sounding text.
+
+4. Post generation Factual Verification
+Run a lightweight extraction pass on the LLM output to detect entity mentions (course names, instructor names, topic claims) and verify them against the catalog before serving to the user. Flag or redact any entity that doesn't match.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+3. If you were assigned to run the initial exploratory data analysis (EDA) on this dataset using Pandas, describe at least ve analytical questions you would answer before touching any model code, along with the specific Pandas operations you would use for each. Explain why each question matters for nal model quality.
+3. Five EDA Questions Before Any Model Code
+Q1: What is the sparsity of the rating matrix?
+Collaborative filtering is notoriously sensitive to sparsity. If 95% of (user, course) pairs have no rating, most CF algorithms degrade severely and you may need to switch to content based or hybrid approaches before writing a single model line.
+
+total_possible = df['user_id'].nunique() * df['course_id'].nunique()
+actual_ratings = len(df)
+sparsity = 1 - (actual_ratings / total_possible)
+print(f"Sparsity: {sparsity:.2%}")
+
+Q2: How is the rating distribution shaped is it skewed?
+If 80% of ratings are 4 or 5 stars (positivity bias / courtesy bias), your model will predict high ratings for nearly everything and appear accurate while being useless for ranking. You need to know whether to reframe as a ranking problem rather than regression.
+
+import matplotlib.pyplot as plt
+
+df['rating'].value_counts().sort_index().plot(kind='bar')
+print(df['rating'].describe())
+print(df['rating'].skew())
+
+Q3: What is the distribution of interactions per user and per course (long tail check)?
+A small number of power users with hundreds of ratings and popular courses with thousands of ratings will dominate model training. Cold-start users (<= 3 ratings) need to be identified now so you can design a fallback strategy, not discover the problem after training.
+
+user_counts = df.groupby('user_id')['course_id'].count()
+course_counts = df.groupby('course_id')['user_id'].count()
+
+print(user_counts.describe())
+print(f"Cold-start users (<=3 ratings): {(user_counts <= 3).sum()}")
+
+user_counts.hist(bins=50, log=True)
+
+Q4: Are there missing values or inconsistencies in demographic features?
+`age`, `major`, and `university` will be used as features. Missing values aren't random a student who doesn't fill in their university may differ systematically from one who does. Imputing blindly introduces silent bias, you need to understand the missingness pattern.
+
+print(df.isnull().sum())
+print(df.isnull().mean().sort_values(ascending=False))  # as % of total
+
+# Check if missingness correlates with other variables
+df[df['university'].isnull()]['major'].value_counts()
+
+Q5: Is there temporal leakage risk, how is data distributed over time?
+If your train/test split is random rather than time based, you will leak future interactions into training data (a students June rating leaks into a model that "predicts" their March behavior). This produces inflated offline metrics and poor production performance.
+
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+df.groupby(df['timestamp'].dt.to_period('M'))['rating'].count().plot()
+
+print(df['timestamp'].min(), df['timestamp'].max())
+# → Decide: time-based split at the 80th percentile timestamp
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+4. Assume you are using GitHub Copilot or Gemini Code Assist to help write the EDA code. Write two example prompts,  one good and one bad  and explain why the difference matters.
+4. Good vs. Bad Prompts for AI Coding Assistants
+Bad Prompt
+>  "Write EDA code for my dataset."
+The assistant has zero context, it doesnt know the schema, the problem domain, the target variable, or what questions matter. It will generate generic boilerplate (`df.head()`, `df.describe()`, `df.isnull().sum()`) that technically runs but answers none of your actual questions. You'll spend more time deleting irrelevant code than if you'd written it yourself. It also gives you no way to verify correctness because the output isn't grounded in your actual intent.
+
+Good Prompt
+> "I have a Pandas DataFrame called `df` with columns: `user_id` (int), `course_id` (int), `rating` (float, 1–5), `timestamp` (string, ISO 8601), `age` (int, nullable), `major` (string, nullable), `university` (string, nullable). Write Python code using Pandas to: (1) compute the sparsity of the user course rating matrix as a percentage, (2) plot the distribution of ratings as a bar chart, and (3) identify users with 3 or fewer total ratings. Use descriptive variable names and add a one-line comment per block explaining what it does."
+Why it's better:
+1. Schema is explicit: the assistant can reference actual column names, avoiding hallucinated column names like `user_name` or `score`
+2. Task is decomposed: three specific, verifiable subtasks instead of a vague directive
+3. Output format is specified: "one line comment per block" makes the output immediately reviewable
+4. Domain constraints are stated:  knowing ratings are 1–5 float lets the assistant write correct bin edges for histograms
+5. Verifiability: you can check each of the three outputs independently against what you expect
+
+The quality of AI assisted code is bounded by the specificity of your prompt. A vague prompt offloads thinking to the model; a precise prompt uses the model as an accelerator for your own thinking.
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
